@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <qmath.h>
 #include <qglobal.h>
+#include <numeric>
 
 #include "converter.h"
 #include "xdathdf.h"
@@ -182,8 +183,12 @@ size_t Converter::exportPositionsData()
         outFilename = fi.path() + "/" + fi.fileName().section(".", 0, 0) + ".h5";
 
         /// process file to read and export each time frame
-        size_t nSteps = processPositionsPerTimeFrame(readIn, _atomicSystem->numOfAtoms(), int(MAX_INTVAL));
+        size_t nSteps = processPositionsPerTimeFrame(readIn, _atomicSystem->numOfAtoms(),
+                                                     _atomicSystem->numTimeFrames() <= 0 ? int(MAX_INTVAL) : _atomicSystem->numTimeFrames());
         atomicSystem()->setNumTimeFrames((int)nSteps);
+
+        /// Compute average displacement along time steps
+        computeAverageDisplacement(1000);
 
         /// Close file pointer
         file.close();
@@ -213,6 +218,10 @@ size_t Converter::exportPositionsData()
         xhdfWriter->writeTimeSteps(xhdfWriter->getRootGrpId(), "POSITIONS", 3,
                                    (const hsize_t*)dims, speciesQList(), _positions, H5T_IEEE_F32BE);
 
+        dims[1] = _avgDisplacement.size()/_atomicSystem->numOfAtoms();
+        xhdfWriter->writeDisplacementData(xhdfWriter->getRootGrpId(), "DISPLACEMENT", 2,
+                                   (const hsize_t*)dims, speciesQList(), _avgDisplacement, H5T_IEEE_F32BE);
+
         /// write species information as POSITIONS dataset attributes
         errStatus = xhdfWriter->closeRootGroup();
         errStatus = xhdfWriter->closeH5File();
@@ -220,11 +229,15 @@ size_t Converter::exportPositionsData()
         if(!errStatus)
             setStatusText(QString(" Export to HDF5 format complete.\n %1 time frame(s) exported ").arg(_positions.size()));
 
-        // Deallocate memory and pointers
+        /// Deallocate memory and pointers
         for(size_t i = 0; i < _positions.size(); ++i)
             std::vector<float>(_positions[i]).swap(_positions[i]);
         std::vector<std::vector<float> >(_positions).swap(_positions);
         //_positions.shrink_to_fit();
+
+        _avgDisplacement.clear();
+        std::vector<float>(_avgDisplacement).swap(_avgDisplacement);
+
         delete xhdfWriter;
     }
     catch(std::exception &ex)
@@ -464,6 +477,30 @@ int Converter::countFunc(QQmlListProperty<SpeciesInfo> *list)
     return count;
 }
 
+float Converter::calculateDisplacement(const std::vector<float> &p1, const std::vector<float> &p2)
+{
+    if(p1.size() != p2.size())
+        return 0;
+
+    float x = p2[0] - p1[0];
+    float y = p2[1] - p1[1];
+    float z = p2[2] - p1[2];
+
+    return  sqrtf(x*x + y*y + z*z);
+}
+
+float Converter::calculateDisplacement(const float *p1, const float *p2)
+{
+    if(p1 == NULL || p2 == NULL)
+        return 0;
+
+    float x = (p2[0] - p1[0]) * atomicSystem()->latticeDim().toList().at(0).toFloat();
+    float y = (p2[1] - p1[1]) * atomicSystem()->latticeDim().toList().at(1).toFloat();
+    float z = (p2[2] - p1[2]) * atomicSystem()->latticeDim().toList().at(2).toFloat();
+
+    return  sqrtf(x*x + y*y + z*z);
+}
+
 int Converter::checkSpeciesHygiene()
 {
     if(SpeciesList.empty())
@@ -478,6 +515,59 @@ int Converter::checkSpeciesHygiene()
     }
 
     return count;
+}
+
+void Converter::computeAverageDisplacement(const int &binSize)
+{
+    _avgDisplacement.clear();
+
+    if(_displacement.empty())
+        return;
+
+    size_t nAtoms = _displacement.size();
+    size_t nSteps = _positions.size();
+    size_t colSize = nSteps / binSize;
+    if((nSteps % binSize) != 0)
+        colSize += 1;
+
+    //qDebug() << "\n==============\n";
+    //qDebug() << nAtoms << nSteps << binSize << colSize;
+    _avgDisplacement.resize(colSize * nAtoms);
+
+    for(size_t it = 0; it < _displacement.size(); ++it)
+    {
+        Q_ASSERT(nSteps == _displacement[it].size());
+
+        std::vector<float>::iterator startItr, finishItr;
+        float avgSum = 0.f;
+        size_t counter = 1;
+
+        startItr = static_cast<std::vector<float> >(_displacement[it]).begin();
+        finishItr = startItr + binSize;
+
+        while(counter < colSize)
+        {
+            avgSum = std::accumulate(startItr, finishItr, 0.f);
+            _avgDisplacement[it * colSize + counter - 1] = avgSum/(float)binSize;
+
+            startItr += binSize;
+            finishItr = startItr + binSize;
+            counter++;
+        }
+
+        if(startItr != _displacement[it].end())
+            finishItr = static_cast<std::vector<float> >(_displacement[it]).end();
+        else
+            finishItr = startItr;
+
+        avgSum = std::accumulate(startItr, finishItr, 0.0f);
+        _avgDisplacement[it * colSize + counter - 1] = avgSum/(float)(nSteps - (colSize-1) * binSize);
+    }
+
+    /// Deallocate memory and pointers
+    for(size_t i = 0; i < nAtoms; ++i)
+        std::vector<float>(_displacement[i]).swap(_displacement[i]);
+    std::vector<std::vector<float> >(_displacement).swap(_displacement);
 }
 
 size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &nAtoms, const int &nSteps)
@@ -498,21 +588,28 @@ size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &
 
     QString line;
     size_t countFrame = 0;
+    bool isInitialStep = true;
+
+    /// vector to store the initial positions of atomic configurations
+    std::vector<float> initialPositions;
+    initialPositions.resize(nAtoms * 3, 0.f);
 
     ///std::vector<std::vector<float> > positions;
     _positions.clear();
+    _displacement.clear();
+    _displacement.resize(nAtoms);
 
-    // Read till the end of file/textstream
+    /// Read till the end of file/textstream
     while(!_reader.atEnd() && countFrame < (size_t)nSteps && !abortExport())
     {
          line = _reader.readLine().trimmed();
 
-         // Beginning of time frame
+         /// Beginning of time frame
          if(line.startsWith("Konfig") || line.startsWith("Config"))
          {
              //float *posArray = new float[nAtoms * 3];
              std::vector<float> posArray;
-             posArray.resize(nAtoms * 3);
+             posArray.resize(nAtoms * 3);   // Fourth entry is for displacement
 
              if(!(countFrame%1000))
                  setStatusText(" Exporting time frames " + QString::number(countFrame));
@@ -521,26 +618,49 @@ size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &
              {
                  line = _reader.readLine().trimmed();
 
-                 //if(line.startsWith("Konfig") || line.startsWith("Config"))
-                 //    break;
-
                  QStringList strList = line.split(QRegExp("\\s+"), QString::SkipEmptyParts);
                  if(strList.size() < 3)
                      continue;
-
+#if 1
                  posArray[i * 3 + 0] = strList[0].toFloat();
                  posArray[i * 3 + 1] = strList[1].toFloat();
                  posArray[i * 3 + 2] = strList[2].toFloat();
+
+                 if(!isInitialStep)
+                 {
+                     float delta = calculateDisplacement(&posArray[i*3], &initialPositions[i*3]);
+                     _displacement[i].push_back(delta);
+                 }
+                 else
+                     _displacement[i].push_back(0.f);
+                 //qDebug() << delta;
+#endif
+#if 0
+                 posArray[i * 4 + 0] = strList[0].toFloat();
+                 posArray[i * 4 + 1] = strList[1].toFloat();
+                 posArray[i * 4 + 2] = strList[2].toFloat();
+                 posArray[i * 4 + 3] = calculateDisplacement(posArray, posArray);
+#endif
              }
 
              _positions.push_back(posArray);
 
+             /// Copy initial position of atoms in a vector
+             if(isInitialStep)
+             {
+                 std::copy(posArray.begin(), posArray.end(), initialPositions.begin());
+                 isInitialStep = false;
+             }
              countFrame++;
              //delete [] posArray;
          }
          else
              continue;
     }
+    /// Release memory allocated by initialPositions array
+    initialPositions.clear();
+    std::vector<float>(initialPositions).swap(initialPositions);
+
     Q_ASSERT(countFrame == _positions.size());
 
     return countFrame;

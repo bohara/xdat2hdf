@@ -118,6 +118,114 @@ void XDAT2HDF::writeDatasetAttributes(const QList<SpeciesInfo *> &_speciesInfo, 
     errStatus = H5Sclose(attribSpace);
 }
 
+void XDAT2HDF::writeDisplacementData(const int &_locId, const QString &_name,
+                                     const unsigned int &_rank, const hsize_t *dims,
+                                     const QList<SpeciesInfo *> &_speciesInfo,
+                                     const std::vector<float> &_data, const int &_dataType)
+{
+    std::string dSetName = _name.toStdString();
+    herr_t errStatus;
+    hid_t dataSpace;
+    hid_t memSpace;
+    hid_t typeId;
+
+    // Open a dataset if one already exists at given location
+    // Else create a new one with given parameters
+    //if(H5Lexists(_locId, dSetName.c_str(), H5P_DEFAULT) == 1)
+    //    _dSetId = H5Dopen(_locId, dSetName.c_str(), H5P_DEFAULT);
+    //else
+    //{
+    //}
+
+    hsize_t *maxDims = new hsize_t[_rank];
+    hsize_t *cDims = new hsize_t[_rank];
+    hid_t dcplId = H5Pcreate(H5P_DATASET_CREATE);
+    hid_t daplId = H5Pcreate(H5P_DATASET_ACCESS);
+
+    for(unsigned int i = 0 ; i < _rank; ++i)
+        maxDims[i] = H5S_UNLIMITED ;
+
+    /// Create dataspace for dataset
+    dataSpace = H5Screate_simple(_rank, dims, NULL);
+    typeId = H5Tcopy(_dataType);
+
+    /// Define chunk dimensions
+    cDims[0] = dims[0];
+    cDims[1] = dims[1];
+
+    /// Set fill value of dataset to 0
+    int fillvalue = 0;
+    errStatus = H5Pset_fill_value(dcplId, typeId, &fillvalue);
+
+    /// Set chunk cache and dimensions
+    errStatus = H5Pset_chunk_cache(daplId, 12421, cDims[0] * cDims[1] * 2 *100,
+                                   H5D_CHUNK_CACHE_W0_DEFAULT);
+    errStatus = H5Pset_chunk(dcplId, _rank, cDims);
+
+    /// Create dataset given the parameter of datasets and dataspaces
+    _dSetId = H5Dcreate(_locId, dSetName.c_str(), typeId, dataSpace, H5P_DEFAULT,
+                        dcplId, daplId);
+
+    try
+    {
+        hid_t nativeType = H5Tget_native_type(typeId, H5T_DIR_ASCEND);
+
+        /// Assuming the dataset is three dimensional, write data of 3rd dimension
+        /// in layers using hyperslab of 1st and 2nd dimensions
+        hsize_t memOffset[2];
+        hsize_t memCount[2];
+        hsize_t dsetOffset[3];
+        hsize_t dsetCount[3];
+
+        //std::vector<float> *dataArray = (std::vector<float>) (*_data);
+
+        //for(size_t frame = 0; frame < nframes; ++frame)
+        //{
+        memOffset[0] = 0;
+        memOffset[1] = 0;
+        memCount[0] = dims[0];
+        memCount[1] = dims[1];
+        // memCount is used as dataspace dimension
+        memSpace = H5Screate_simple(2, memCount, NULL);
+        //errStatus = H5Sselect_hyperslab(memSpace, H5S_SELECT_SET, memOffset, NULL,
+        //                                memCount, NULL);
+
+        dsetOffset[0] = 0;
+        dsetOffset[1] = 0;
+        //dsetOffset[2] = frame;
+        dsetCount[0] = dims[0];
+        dsetCount[1] = dims[1];
+        dsetCount[2] = 1;
+        //errStatus = H5Sselect_hyperslab(dataSpace, H5S_SELECT_SET, dsetOffset, NULL,
+        //                                dsetCount, NULL);
+
+        errStatus = H5Dwrite(_dSetId, nativeType, memSpace, dataSpace, H5P_DEFAULT,
+                             (const void*)&_data[0]);
+
+        //}
+
+        //      errStatus = H5Dwrite(_dSetId, nativeType, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+        //                           (const void*)_data);
+
+        errStatus =  H5Tclose(nativeType);
+    }
+    catch(std::exception &ex)
+    {
+        qDebug() << "\tException : @" << __FILE__ << __LINE__ << __FUNCTION__
+                 << ex.what();
+    }
+
+    writeDatasetAttributes(_speciesInfo, _dSetId);
+
+    // close functions
+    errStatus = H5Tclose(typeId);
+    errStatus = H5Sclose(dataSpace);
+    errStatus = H5Sclose(memSpace);
+    errStatus = H5Pclose(dcplId);
+    errStatus = H5Pclose(daplId);
+    errStatus = H5Dclose(_dSetId);
+}
+
 void XDAT2HDF::writeTimeSteps(const int &_locId, const QString &_name,
                               const unsigned int &_rank, const hsize_t *dims,
                               const QList<SpeciesInfo *> &_speciesInfo,

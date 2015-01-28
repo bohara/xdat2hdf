@@ -344,7 +344,8 @@ ApplicationWindow {
                     placeholderText: qsTr("System name")
 
                     onTextChanged: {
-                        xdathdf.atomicSystem.systemName = text
+                        if(text.length > 0)
+                            xdathdf.atomicSystem.systemName = text
                     }
                 }
 
@@ -368,6 +369,11 @@ ApplicationWindow {
                     placeholderText: qsTr("delta time in femtosecond")
                     validator: DoubleValidator{bottom:0.0; decimals: 32}
                     inputMethodHints: Qt.ImhFormattedNumbersOnly | Qt.ImhDigitsOnly
+
+                    onTextChanged: {
+                        if(text.length > 0)
+                            xdathdf.atomicSystem.deltaTime = text
+                    }
                 }
 
                 Label{
@@ -390,6 +396,11 @@ ApplicationWindow {
                     placeholderText: qsTr("temperature")
                     validator: DoubleValidator{bottom:0.0; decimals: 32}
                     inputMethodHints: Qt.ImhFormattedNumbersOnly | Qt.ImhDigitsOnly
+
+                    onTextChanged: {
+                        if(text.length > 0)
+                            xdathdf.atomicSystem.kelvin = text
+                    }
                 }
 
                 Label{
@@ -434,6 +445,11 @@ ApplicationWindow {
                     placeholderText: qsTr("# of Atoms")
                     validator: IntValidator{bottom:0;}
                     inputMethodHints: Qt.ImhFormattedNumbersOnly | Qt.ImhDigitsOnly
+
+                    onTextChanged: {
+                        if(text.length > 0)
+                            xdathdf.atomicSystem.numOfAtoms = text
+                    }
                 }
 
                 Label{
@@ -456,6 +472,11 @@ ApplicationWindow {
                     placeholderText: qsTr("# of Time Frames")
                     validator: IntValidator{bottom: 0}
                     inputMethodHints: Qt.ImhFormattedNumbersOnly | Qt.ImhDigitsOnly
+
+                    onTextChanged: {
+                        if(text.length > 0)
+                            xdathdf.atomicSystem.numTimeFrames = text
+                    }
                 }
 
                 Label{

@@ -28,6 +28,10 @@ public:
 
     void writeDatasetAttributes(const QList<SpeciesInfo*> &_speciesInfo, const hid_t &_dSetId);
 
+    void writeDisplacementData(const int &_locId, const QString &_name, const unsigned int &_rank,
+                               const hsize_t *dims, const QList<SpeciesInfo*> &_speciesInfo,
+                               const std::vector<float> &_data, const int &_dataType);
+
     /* write positions array into the hdf5 file *
      * use hyperslab/chunking techniques? */
     void writeTimeSteps(const int &_locId, const QString &_name, const unsigned int &_rank,

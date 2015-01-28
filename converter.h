@@ -89,17 +89,22 @@ private:
     //std::vector<SpeciesInfo> SpeciesList;
     QList<SpeciesInfo*> SpeciesList;
     AtomicSystem *_atomicSystem;
-    std::vector<std::vector<float> > _positions;
+    std::vector<std::vector<float> > _positions;    // vector of array of atom coordinates per timestep
+    std::vector<std::vector<float> > _displacement; // vector of displacement array(row vector of floats) over time per atom
+    std::vector<float> _avgDisplacement;            // two dimensional array of float to represent average displacement
 
     static void appendFunc(QQmlListProperty<SpeciesInfo> *list, SpeciesInfo *item);
     static SpeciesInfo* atFunc(QQmlListProperty<SpeciesInfo> *list, int index);
     static int countFunc(QQmlListProperty<SpeciesInfo> *list);
 
+    float calculateDisplacement(const std::vector<float>&p1, const std::vector<float>&p2);
+    float calculateDisplacement(const float *p1, const float *p2);
     int checkSpeciesHygiene();
+    void computeAverageDisplacement(const int &binSize);
     size_t exportPositionsData();
     size_t processPositionsPerTimeFrame(QTextStream &_reader, const int &nAtoms, const int &nSteps);
     //size_t processPositionsPerTimeFrame(const QFile &_filePtr, const int &nAtoms, const int &nSteps);
-    void resetQmlUI();
+    void resetQmlUI();    
 };
 
 #endif // CONVERTER_H
