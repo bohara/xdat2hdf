@@ -24,12 +24,18 @@ int XDAT2HDF::createH5File(const QString &_name)
 
 int XDAT2HDF::createRootGroup(const QString &_name)
 {
-    if(H5Lexists(_fileId, _name.toStdString().c_str(), H5P_DEFAULT) == 1)
-        _rootGrpId = H5Gopen(_fileId, _name.toStdString().c_str(), H5P_DEFAULT);
-    else
-        _rootGrpId = H5Gcreate(_fileId, _name.toStdString().c_str(), H5P_DEFAULT,
-                               H5P_DEFAULT, H5P_DEFAULT);
-
+    try{
+        if(H5Lexists(_fileId, _name.toStdString().c_str(), H5P_DEFAULT) == 1)
+            _rootGrpId = H5Gopen(_fileId, _name.toStdString().c_str(), H5P_DEFAULT);
+        else
+            _rootGrpId = H5Gcreate(_fileId, _name.toStdString().c_str(), H5P_DEFAULT,
+                                   H5P_DEFAULT, H5P_DEFAULT);
+    }
+    catch(std::exception &ex)
+    {
+        qDebug() << "\tException : @" << __FILE__ << __LINE__ << __FUNCTION__
+                 << ex.what();
+    }
     return (_rootGrpId < 0) ? _rootGrpId : 0;
 }
 

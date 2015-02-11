@@ -285,6 +285,12 @@ void Converter::loadPositionsFile()
     // Handles either case of XDAT files with Konfig or Config
     int idx_K = strTextArea.lastIndexOf("Konfig");
     int idx_C = strTextArea.lastIndexOf("Config");
+
+    idx_K = (idx_K >=0 && idx_K == strTextArea.indexOf("Konfig"))
+            ? strTextArea.size()-1 : idx_K;
+    idx_C = (idx_C >= 0 && idx_C == strTextArea.indexOf("Config"))
+            ? strTextArea.size()-1 : idx_C;
+
     strTextArea.truncate(idx_C > idx_K ? idx_C : idx_K);
     if(idx_C == -1 && idx_K == -1)
     {
@@ -399,7 +405,7 @@ void Converter::loadSpeciesFile()
     {
         line = readIn.readLine();
 
-        if(line.startsWith("#"))
+        if(line.startsWith("#") || !line.trimmed().size())
             continue;
 
         QStringList strList = line.split(QRegExp("\\s+"), QString::SkipEmptyParts);
