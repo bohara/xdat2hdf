@@ -598,7 +598,9 @@ size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &
 
     /// vector to store the initial positions of atomic configurations
     std::vector<float> initialPositions;
+    std::vector<float> prevStepPositions;
     initialPositions.resize(nAtoms * 3, 0.f);
+    prevStepPositions.resize(nAtoms * 3, 0.f);
 
     ///std::vector<std::vector<float> > positions;
     _positions.clear();
@@ -634,7 +636,12 @@ size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &
 
                  if(!isInitialStep)
                  {
-                     float delta = calculateDisplacement(&posArray[i*3], &initialPositions[i*3]);
+                     // Unperiodify the current position(s): prevStepPositions is
+                     // already lattice scaled whereas posArray is not.
+                     unPeriodify(&posArray[i*3], &prevStepPositions[i*3]);
+
+                     float delta = calculateDisplacement(&prevStepPositions[i*3],
+                                                         &initialPositions[i*3]);
                      _displacement[i].push_back(delta);
                  }
                  else
@@ -654,7 +661,15 @@ size_t Converter::processPositionsPerTimeFrame(QTextStream &_reader, const int &
              /// Copy initial position of atoms in a vector
              if(isInitialStep)
              {
-                 std::copy(posArray.begin(), posArray.end(), initialPositions.begin());
+                 QList<QVariant>latDims = atomicSystem()->latticeDim().toList();
+                 for(size_t i = 0; i< (size_t)nAtoms; ++i)
+                 {
+                     initialPositions[i*3 + 0] = posArray[i*3 + 0] * latDims.at(0).toFloat();
+                     initialPositions[i*3 + 1] = posArray[i*3 + 1] * latDims.at(1).toFloat();
+                     initialPositions[i*3 + 2] = posArray[i*3 + 2] * latDims.at(2).toFloat();
+                 }
+                 std::copy(initialPositions.begin(), initialPositions.end(),
+                           prevStepPositions.begin());
                  isInitialStep = false;
              }
              countFrame++;
@@ -683,4 +698,80 @@ void Converter::resetQmlUI()
 
     _xdatFileText = "";
     emit positionsTextChanged();
+}
+
+/* p2 is the current position and p2 is the previous position
+ * copy the unperiodified position to p1!
+ */
+void Converter::unPeriodify(const float*curPos, float*prevPos)
+{
+    if(curPos == NULL || prevPos == NULL)
+        return;
+
+    std::vector<float> p2;
+    std::vector<float> p1;
+    p1.resize(3, 0.f);
+    p2.resize(3, 0.f);
+
+    std::copy(curPos, curPos+3, p2.begin());
+    std::copy(prevPos, prevPos+3, p1.begin());
+
+    float dst = 0.f;
+    float lx = atomicSystem()->latticeDim().toList().at(0).toFloat();
+    float ly = atomicSystem()->latticeDim().toList().at(1).toFloat();
+    float lz = atomicSystem()->latticeDim().toList().at(2).toFloat();
+
+    // Lattice scale the current position
+    p2[0] *= lx;
+    p2[1] *= ly;
+    p2[2] *= lz;
+
+    ///*************************************************************///
+    /// Process the x-component
+    if((dst = p1[0] - p2[0]) > 0.5*lx)
+        while(dst > 0.5*lx)
+        {
+            p2[0] += lx;
+            dst = p1[0] - p2[0];
+        }
+    else if((dst = p1[0] - p2[0]) < -0.5*lx)
+        while(dst < -0.5*lx)
+        {
+            p2[0] -= lx;
+            dst = p1[0] - p2[0];
+        }
+    ///*************************************************************///
+    /// Process the y-component
+    dst = 0.0f;
+    if((dst = p1[1] - p2[1]) > 0.5*ly)
+        while(dst > 0.5*ly)
+        {
+            p2[1] += ly;
+            dst = p1[1] - p2[1];
+        }
+    else if((dst = p1[1] - p2[1]) < -0.5*ly)
+        while(dst < -0.5*ly)
+        {
+            p2[1] -= ly;
+            dst = p1[1] - p2[1];
+        }
+    ///*************************************************************///
+    /// Process the z-component
+    dst = 0.0f;
+    if((dst = p1[2] - p2[2]) > 0.5*lz)
+        while(dst > 0.5*lz)
+        {
+            p2[2] += lz;
+            dst = p1[2] - p2[2];
+        }
+    else if((dst = p1[2] - p2[2]) < -0.5*lz)
+        while(dst < -0.5*lz)
+        {
+            p2[2] -= lz;
+            dst = p1[2] - p2[2];
+        }
+
+    std::copy(p2.begin(), p2.end(), prevPos);
+    p1.clear();
+    p2.clear();
 }

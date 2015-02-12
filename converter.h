@@ -105,6 +105,7 @@ private:
     size_t processPositionsPerTimeFrame(QTextStream &_reader, const int &nAtoms, const int &nSteps);
     //size_t processPositionsPerTimeFrame(const QFile &_filePtr, const int &nAtoms, const int &nSteps);
     void resetQmlUI();    
+    void unPeriodify(const float *curPos, float *prevPos);
 };
 
 #endif // CONVERTER_H
